@@ -53,3 +53,6 @@ example.db
 .idea/
 clients/*/swagger.json
 clients/*/dist
+
+# venv
+.venv

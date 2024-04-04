@@ -1,0 +1,50 @@
+# 使用ubuntu官方镜像作为基础镜像
+FROM ubuntu
+
+# 设置环境变量
+ENV API_SERVER_HOME=/opt/www
+
+# 设置工作目录
+WORKDIR "$API_SERVER_HOME"
+
+# 复制所需文件
+COPY "./requirements.txt" "./"
+COPY "./app/requirements.txt" "./app/"
+COPY "./config.py" "./"
+COPY "./tasks" "./tasks"
+
+# 设置构建参数
+ARG INCLUDE_POSTGRESQL=false
+ARG INCLUDE_UWSGI=false
+
+# 安装依赖并执行安装脚本
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends python3-pip python3-dev libffi-dev gcc libpq-dev && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir -r tasks/requirements.txt && \
+    ( \
+        if [ "$INCLUDE_POSTGRESQL" = 'true' ]; then \
+            apt-get install -y libpq5 && \
+            pip install --no-cache-dir psycopg2 ; \
+        fi \
+    ) && \
+    ( if [ "$INCLUDE_UWSGI" = 'true' ]; then pip install --no-cache-dir uwsgi ; fi ) && \
+    apt-get remove -y gcc python3-dev libffi-dev libpq-dev && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# 复制整个项目目录
+COPY "./" "./"
+
+# 更改文件拥有者并复制配置文件
+RUN chown -R nobody:nogroup "." && \
+    if [ ! -e "./local_config.py" ]; then \
+        cp "./local_config.py.template" "./local_config.py" ; \
+    fi
+
+# 切换用户
+USER nobody
+
+# 容器启动时执行的命令
+CMD [ "invoke", "app.run", "--no-install-dependencies", "--host", "0.0.0.0" ]
