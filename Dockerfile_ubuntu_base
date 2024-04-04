@@ -1,0 +1,57 @@
+# Use an official Ubuntu base image with Python 3 installed
+FROM ubuntu:20.04
+
+# Set environment variable for the application home directory
+ENV API_SERVER_HOME=/opt/www
+
+# Set the working directory to the application home directory
+WORKDIR "$API_SERVER_HOME"
+
+# Copy necessary files from the host machine to the Docker image
+COPY "./requirements.txt" "./"
+COPY "./app/requirements.txt" "./app/"
+COPY "./config.py" "./"
+COPY "./tasks" "./tasks"
+
+# Install build dependencies and Python packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    python3-pip \
+    python3-dev \
+    libffi-dev \
+    libssl-dev && \
+    pip3 install --no-cache-dir -r requirements.txt && \
+    pip3 install --no-cache-dir -r tasks/requirements.txt && \
+    invoke app.dependencies.install
+
+# Optionally include PostgreSQL and uWSGI support
+ARG INCLUDE_POSTGRESQL=false
+ARG INCLUDE_UWSGI=false
+RUN if [ "$INCLUDE_POSTGRESQL" = 'true' ]; then \
+        apt-get install -y libpq-dev && \
+        pip3 install --no-cache-dir psycopg2; \
+    fi && \
+    if [ "$INCLUDE_UWSGI" = 'true' ]; then \
+        pip3 install --no-cache-dir uwsgi; \
+    fi
+
+# Cleanup to reduce image size
+RUN apt-get remove --purge -y build-essential python3-dev libffi-dev libssl-dev && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /root/.cache
+
+# Copy the rest of the application
+COPY "./" "./"
+
+# Change ownership of all directories and files to the 'nobody' user
+RUN chown -R nobody:nogroup "$API_SERVER_HOME" && \
+    if [ ! -e "./local_config.py" ]; then \
+        cp "./local_config.py.template" "./local_config.py"; \
+    fi
+
+# Run the application as the 'nobody' user for security reasons
+USER nobody
+
+# The command to run the application
+CMD [ "invoke", "app.run", "--no-install-dependencies", "--host", "0.0.0.0" ]
